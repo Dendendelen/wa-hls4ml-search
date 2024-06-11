@@ -130,6 +130,7 @@ def preprocess_features(data, binary_feature_names, numeric_feature_names, categ
 
     return preprocessed_data
 
+# plot losses during training of a model
 def plot_loss(name, history):
     plt.figure(figsize=(10,6))
     plt.plot(history.history['loss'], label='Training Loss')
@@ -141,23 +142,67 @@ def plot_loss(name, history):
     plt.savefig(name+'_train_loss.png')
     plt.show()
 
-def plot_histograms(y_predicted, y_actual, X_raw):
+# plot a histogram
+def plot_histogram(y, name, x_axis, filename, log=False, color="blue"):
     plt.figure(figsize=(10,6))
+    plt.hist(y, 20, color=color)
+    plt.title(name)
+    plt.ylabel('Number')
+    plt.xlabel(x_axis)
 
-    y_difference = y_actual - y_predicted
+    if log:
+        plt.yscale('log')
+        plt.savefig('plots/histograms/'+filename+'_log_hist.png')
+    else:
+        plt.savefig('plots/histograms/'+filename+'_hist.png')
+
+    plt.close()
+    
+# plot a 2d histogram
+def plot_scatter(x, y, name, x_axis, y_axis, filename, log=False):
+    plt.figure(figsize=(10,6))
+    if log:
+        plt.hist2d(x, y, bins=(20,15), density=True, norm='log')
+    else:
+        plt.hist2d(x, y, bins=(20,15), density=True)
+
+    plt.title(name)
+    plt.ylabel(y_axis)
+    plt.xlabel(x_axis)
+    
+    if log:
+        plt.savefig('plots/histograms/'+filename+'_log_2dhist.png')
+    else:
+        plt.savefig('plots/histograms/'+filename+'_2dhist.png')
+    plt.close()
+
+def plot_histograms(y_predicted, y_actual, output_features):
+
+    y_difference = y_predicted - y_actual
     y_abs_diff = np.abs(y_difference)
 
+    i = 0
 
+    colors = ['blue', 'green', 'red', 'cyan', 'magenta', 'yellow', 'orange']
+    for feature in output_features:
 
-    plt.plot(history.history['loss'], label='Training Loss')
-    plt.plot(history.history['val_loss'], label='Validation Loss')
-    plt.title('Model loss')
-    plt.ylabel('Loss')
-    plt.xlabel('Epoch')
-    plt.legend(loc='upper right')
-    plt.savefig(name+'_train_loss.png')
-    plt.show()
+        feature_diff = y_difference[:, i]
+        abs_feature_diff = y_abs_diff[:, i]
 
+        rms = np.sqrt(np.mean(np.square(feature_diff)))
+
+        plot_scatter(y_actual[:, i], feature_diff, "Residual vs Value of "+feature, feature, 'Error', feature, False)
+        plot_scatter(y_actual[:, i], abs_feature_diff, "Log Absolute Residual vs Value of "+feature, feature, 'Error', feature, True)
+
+        plot_histogram(abs_feature_diff, 'Absolute Residual of '+feature, 'Absolute Error of '+feature, feature+"_abs", False, colors[i])
+        plot_histogram(abs_feature_diff, 'Log Absolute Residual of '+feature, 'Absolute Error of '+feature, feature+"_abs", True, colors[i])
+
+        plot_histogram(feature_diff, 'Residual of '+feature, 'Error of '+feature +" (RMSE = " + str(rms) +")", feature, False, colors[i])
+        plot_histogram(feature_diff, 'Log Residual of '+feature, 'Error of '+feature +" (RMSE = " + str(rms) +")", feature, True, colors[i])
+
+        print("Finished plots for "+feature)
+
+        i += 1
 
 def plot_results(name, mpl_plots, y_test, y_pred, X_raw_test, output_features):
 
@@ -395,7 +440,33 @@ def display_results_regressor(X_succeeded_test, y_succeeded_test, X_raw_succeede
 
 if __name__ == "__main__":
 
-    train = False
+    parser = argparse.ArgumentParser(prog='wa-hls4ml', description='Train or test model for wa-hls4ml', add_help=True)
+
+    parser.add_argument('--train', action='store_true', help='Train a new surrogate model from the data')
+    parser.add_argument('--test', action='store_true', help='Test existing models')
+
+    parser.add_argument('-c', '--classification', action='store_true', help='Train/test the classifier')
+    parser.add_argument('-r','--regression', action='store_true', help='Train/test the regressor')
+
+    args = parser.parse_args()
+    args_dict = vars(args)
+
+    train = args_dict['train']
+    test = args_dict['test']
+
+    if not train and not test:
+        train = True
+        test = True
+
+    classification = args_dict['classification']
+    regression= args_dict['regression']
+
+    skip_display_intermediate = False
+
+    if not classification and not regression:
+        classification = True
+        regression = True
+        skip_display_intermediate = True
 
     # get raw data out
     X_train, X_test, y_train, y_test, X_raw_train, X_raw_test = preprocess_data()
@@ -410,9 +481,11 @@ if __name__ == "__main__":
     y_test_classifier = X_test[:, 4]
 
     # train the classifier
-    print("Training the classifier...")
-    # train_classifier(X_train_classifier, y_train_classifier)
-    display_results_classifier(X_test_classifier, X_raw_test_classifier, y_test_classifier, ["hls_synth_success"])
+    if train and classification:
+        print("Training the classifier...")
+        train_classifier(X_train_classifier, y_train_classifier)
+    if classification and not skip_display_intermediate:
+        display_results_classifier(X_test_classifier, X_raw_test_classifier, y_test_classifier, ["hls_synth_success"])
 
     # find which synth has succeeded
     succeeded_synth_gt_test = np.nonzero(y_test_classifier)
@@ -429,9 +502,15 @@ if __name__ == "__main__":
     X_raw_succeeded_train = X_raw_train[succeeded_synth_gt_train, :]
 
     # train the regressor
-    print("Training the regressor...")
-    # train_regressor(X_succeeded_train, y_succeeded_train)
-    display_results_regressor(X_succeeded_test, y_succeeded_test, X_raw_succeeded_test, ["WorstLatency_hls", "IntervalMax_hls", "FF_hls", "LUT_hls", "BRAM_18K_hls", "DSP_hls"])
+    if train and regression:
+        print("Training the regressor...")
+        train_regressor(X_succeeded_train, y_succeeded_train)
+    if regression and not skip_display_intermediate:
+        display_results_regressor(X_succeeded_test, y_succeeded_test, X_raw_succeeded_test, ["WorstLatency_hls", "IntervalMax_hls", "FF_hls", "LUT_hls", "BRAM_18K_hls", "DSP_hls"])
+
+    if not regression or not classification:
+        print("Done.")
+        sys.exit(0)
 
     print("Testing the models in union...")
     model_classifier = load_model("model_class_1/KERAS_check_best_model.h5")
@@ -477,6 +556,8 @@ if __name__ == "__main__":
     rmse = np.sqrt(mse)
     r2 = r2_score(y_test_total, y_pred)
 
+    plot_histograms(y_pred, y_test_total, ["WorstLatency_hls", "IntervalMax_hls", "FF_hls", "LUT_hls", "BRAM_18K_hls", "DSP_hls","hls_synth_success"])
+
     # now set classification predictions to be the hinge classification raw outputs
     y_pred[:, 6] = class_pred[:,0]
 
@@ -485,8 +566,7 @@ if __name__ == "__main__":
     print(f'Root Mean Squared Error (RMSE): {rmse}')
     print(f'R-squared (R2 Score): {r2}')
 
-    plot_results("both", False, y_test_total, y_pred, X_raw_test_classifier, ["WorstLatency_hls", "IntervalMax_hls", "FF_hls", "LUT_hls", "BRAM_18K_hls","DSP_hls","hls_synth_success"])
-
+    # plot_results("both", False, y_test_total, y_pred, X_raw_test_classifier, ["WorstLatency_hls", "IntervalMax_hls", "FF_hls", "LUT_hls", "BRAM_18K_hls","DSP_hls","hls_synth_success"])
     
 
 
