@@ -1,0 +1,69 @@
+node_sets {
+    key: "nn_layer"
+    value {
+        description: "One perceptron layer"
+        features {
+            key: "nodes"
+            value: { 
+                description: "Number of nodes in the layer"
+                dtype: DT_INT64  shape { } 
+            }
+        }
+    }
+}
+
+edge_sets {
+    key: "feedforward"
+    value {
+        description: "Connects nn layer to another layer that it feeds into"
+        source: "nn_layer"
+        target: "nn_layer"
+        features {
+            key: "activation"
+            value: { 
+                description: "Activation function used between these layers, 1-hot encoding"
+                dtype: DT_BOOL shape { dim { size: 3 } } 
+            }
+        }
+        features {
+            key: "density"
+            value: {
+                description: "Density of this connection"
+                dtype: DT_FLOAT shape { }
+            }
+        }
+        features {
+            key: "dropout"
+            value: { 
+                description: "Percentage of nodes ignored in dropout"
+                dtype: DT_FLOAT  shape { } 
+            }
+        }
+    }
+}
+
+context {
+  features {
+    key: "rf"
+    value: {
+      description: "Reuse factor for synthesis"
+      dtype: DT_INT64
+      shape { }
+    }
+  }
+  features {
+    key: "precision"
+    value: {
+        description: "Fixed point precision"
+        dtype: DT_INT64
+        shape { }
+    }
+  }
+  features {
+    key: "strategy"
+    value: {
+        description: "1-hot encoding of strategy"
+        dtype: DT_BOOL shape { dim {size: 2} }
+    }
+  }
+}

@@ -1,6 +1,8 @@
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Activation, BatchNormalization, Dropout
-from tensorflow.keras.regularizers import l1
+from tensorflow import keras
+
+from keras.models import Sequential
+from keras.layers import Dense, Activation, BatchNormalization, Dropout
+from keras.regularizers import l1
 
 
 def create_model_classification():
@@ -28,10 +30,10 @@ def create_model_classification():
     model.add(Dense(1, name='output', kernel_initializer='lecun_uniform', kernel_regularizer=l1(0.001)))
     return model
 
-def create_model_regression():
+def create_model_regression_single_feature():
     model = Sequential()
     # d_in	d_out prec rf strategy (one-hot encoded)
-    model.add(Dense(64, input_shape=(7,), name='fc1', kernel_initializer='lecun_uniform', kernel_regularizer=l1(0.00001)))
+    model.add(Dense(64, input_shape=(6,), name='fc1', kernel_initializer='lecun_uniform', kernel_regularizer=l1(0.00001)))
     model.add(Activation(activation='leaky_relu', name='relu1'))
     #model.add(BatchNormalization())
     model.add(Dense(1024, name='fc2', kernel_initializer='lecun_uniform', kernel_regularizer=l1(0.00001)))
@@ -49,5 +51,5 @@ def create_model_regression():
     model.add(Dense(64, name='fc6', kernel_initializer='lecun_uniform', kernel_regularizer=l1(0.00001))) #32
     model.add(Activation(activation='elu', name='elu2'))
     #hls_synth_success, WorstLatency_hls, IntervalMax_hls, FF_hls, LUT_hls, BRAM_18K_hls, DSP_hls
-    model.add(Dense(6, name='output', kernel_initializer='lecun_uniform', kernel_regularizer=l1(0.001)))
+    model.add(Dense(1, name='output', kernel_initializer='lecun_uniform', kernel_regularizer=l1(0.001)))
     return model
