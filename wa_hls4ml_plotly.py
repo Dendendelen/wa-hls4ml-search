@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import math
+import os
 
 
 def plot_results(name, mpl_plots, y_test, y_pred, X_raw_test, output_features, folder_name):
@@ -30,7 +31,6 @@ def plot_results(name, mpl_plots, y_test, y_pred, X_raw_test, output_features, f
 
     import plotly.graph_objects as go
     import plotly.io as pio
-    import chart_studio.plotly as py
 
     # Create a figure
     fig = go.Figure()
@@ -106,7 +106,12 @@ def plot_results(name, mpl_plots, y_test, y_pred, X_raw_test, output_features, f
     # Set the layout
     fig.update_layout(height=1900, width=1900, title='wa-hls4ml 1-Layer Dense Toy Model - Actual vs Predicted')
 
-    pio.write_html(fig, file=folder_name+'/plots/scatterplots/'+name+'_wa-hls4ml_outputs.html', auto_open=False)
+    directory = folder_name+'/plots/scatterplots/'
+
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+    pio.write_html(fig, file=directory+name+'_wa-hls4ml_outputs.html', auto_open=False)
     # py.plot(fig, filename='wa-hls4ml_outputs', auto_open=False)
     # Show the plot
     # fig.show()

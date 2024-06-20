@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 
 def plot_loss(name, history, folder_name):
     ''' plot losses during training of a model '''
@@ -11,7 +12,13 @@ def plot_loss(name, history, folder_name):
     plt.ylabel('Loss')
     plt.xlabel('Epoch')
     plt.legend(loc='upper right')
-    plt.savefig(folder_name+'/plots/training/'+name+'_train_loss.png')
+
+    directory = folder_name+'/plots/training/'
+
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+    plt.savefig(directory+name+'_train_loss.png')
     plt.show()
 
 
@@ -24,11 +31,16 @@ def plot_histogram(y, name, x_axis, filename, folder_name, log=False, color="blu
     plt.ylabel('Number')
     plt.xlabel(x_axis)
 
+    directory = folder_name+'/plots/histograms/'
+
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
     if log:
         plt.yscale('log')
-        plt.savefig(folder_name+'/plots/histograms/'+filename+'_log_hist.png')
+        plt.savefig(directory+filename+'_log_hist.png')
     else:
-        plt.savefig(folder_name+'/plots/histograms/'+filename+'_hist.png')
+        plt.savefig(directory+filename+'_hist.png')
 
     plt.close()
 
@@ -45,11 +57,16 @@ def plot_scatter(x, y, name, x_axis, y_axis, filename, folder_name, log=False):
     plt.title(name)
     plt.ylabel(y_axis)
     plt.xlabel(x_axis)
+
+    directory = folder_name+'/plots/histograms/'
+
+    if not os.path.exists(directory):
+        os.makedirs(directory)
     
     if log:
-        plt.savefig(folder_name+'/plots/histograms/'+filename+'_log_2dhist.png')
+        plt.savefig(directory+filename+'_log_2dhist.png')
     else:
-        plt.savefig(folder_name+'/plots/histograms/'+filename+'_2dhist.png')
+        plt.savefig(directory+filename+'_2dhist.png')
     plt.close()
 
 def plot_histograms(y_predicted, y_actual, output_features, folder_name):

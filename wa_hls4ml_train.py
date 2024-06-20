@@ -1,6 +1,7 @@
 import os
 import sys
 import argparse
+import glob
 
 import numpy as np
 import pandas as pd
@@ -12,6 +13,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import tensorflow as tf
 import tensorflow_gnn as tfgnn
 
+# This seems like you should just be able to import straight from tensorflow, but that messes up syntax checking
 from tensorflow import keras
 
 from keras.optimizers import Adam, AdamW
@@ -67,7 +69,7 @@ def preprocess_data_from_csv(csv_file, input_features, output_features, _binary_
 
     # Step 8: Extract special features
     # these are features which we do not want to process at all
-    for i in range (preprocess_data.shape[0]):
+    for i in range (preprocessed_data[0].shape[0]):
         special_datapoint = []
         for name in special_feature_names:
             special_feature = df[name][i]
@@ -156,7 +158,8 @@ def preprocess_data(is_graph = False):
     numeric_feature_names = ["d_in", "d_out", "prec", "rf", "WorstLatency_hls", "IntervalMax_hls", "FF_hls", "LUT_hls",
                              "BRAM_18K_hls", "DSP_hls"]
     categorical_feature_names = ["strategy"]
-    special_feature_names = ["json"]
+    # special_feature_names = ["json"]
+    special_feature_names = []
 
     _X, y, X_raw, special_data = preprocess_data_from_csv('results/results_format_test.csv', input_features, output_features,
                              binary_feature_names, numeric_feature_names,
@@ -219,10 +222,9 @@ def train_classifier(X_train, y_train, folder_name):
         callbacks=callbacks.callbacks,
     )
     wa_hls4ml_data_plot.plot_loss('classifier', history, folder_name)
+    
 
-
-
-def train_regressor(X_train, y_train, output_features, folder_name):
+def train_regressor(X_train, y_train, output_features, graph, folder_name):
     ''' Train regression models for all features '''
 
     i = 0
@@ -232,7 +234,10 @@ def train_regressor(X_train, y_train, output_features, folder_name):
         print("Training " + feature + "...")
         y_train_feature = y_train[:, i]
 
-        model = wa_hls4ml_model.create_model_regression_single_feature()
+        if not graph:
+            model = wa_hls4ml_model.create_model_regression_single_feature()
+        else:
+            model = wa_hls4ml_model.create_model_gnn()
 
         adam = AdamW(learning_rate=0.005)
         model.compile(optimizer=adam, loss=tf.keras.losses.Huber(), metrics=['mse', 'mae'])
@@ -272,6 +277,7 @@ def calculate_metrics(y_test, y_pred):
     print(f'Root Mean Squared Error (RMSE): {rmse}')
     print(f'R-squared (R2 Score): {r2}')
 
+
 def display_results_classifier(X_test, X_raw_test, y_test, output_features, folder_name):
     ''' Display the results of the classification model '''
 
@@ -292,8 +298,8 @@ def display_results_classifier(X_test, X_raw_test, y_test, output_features, fold
 
     # plot our classification results
     y_test_2d = np.reshape(y_test, (y_test.shape[0], 1))
-    from wa_hls4ml_plotly import plot_results
-    plot_results("classifier", False, y_test_2d, y_pred, X_raw_test, output_features)
+    plot_results("classifier", False, y_test_2d, y_pred, X_raw_test, output_features, folder_name)
+
 
 
 def display_results_regressor(X_test, X_raw_test, y_test, output_features, folder_name):
@@ -318,7 +324,7 @@ def display_results_regressor(X_test, X_raw_test, y_test, output_features, folde
     calculate_metrics(y_test, y_pred)
 
     # plot our regression results
-    plot_results("regression_all", False, y_test, y_pred, X_raw_test, output_features)
+    plot_results("regression_all", False, y_test, y_pred, X_raw_test, output_features, folder_name)
 
 
 def test_regression_classification_union(X_test, X_raw_test, y_test, features_without_classification, feature_classification_task, folder_name):
@@ -367,7 +373,7 @@ def test_regression_classification_union(X_test, X_raw_test, y_test, features_wi
     calculate_metrics(y_test, y_pred)
 
     # Generate histograms for all
-    wa_hls4ml_data_plot.plot_histograms(y_pred, y_test, features_with_classification)
+    wa_hls4ml_data_plot.plot_histograms(y_pred, y_test, features_with_classification, folder_name)
 
     # now set classification predictions to be the hinge classification raw outputs
     y_pred[:, 6] = class_pred[:,0]
@@ -416,7 +422,7 @@ def perform_train_and_test(train, test, regression, classification, skip_interme
     # train the regressor
     if train and regression:
         print("Training the regressor...")
-        train_regressor(X_succeeded_train, y_succeeded_train, features_without_classification, folder_name)
+        train_regressor(X_succeeded_train, y_succeeded_train, features_without_classification, is_graph, folder_name)
     if test and regression and not skip_intermediates:
         display_results_regressor(X_succeeded_test, X_raw_succeeded_test, y_succeeded_test, features_without_classification, folder_name)
 
@@ -426,6 +432,7 @@ def perform_train_and_test(train, test, regression, classification, skip_interme
     
     print("Testing the models in union...")
     test_regression_classification_union(X_test, X_raw_test, y_test, features_without_classification, feature_classification_task, folder_name)
+
 
 
 if __name__ == "__main__":
@@ -439,6 +446,8 @@ if __name__ == "__main__":
     parser.add_argument('-r','--regression', action='store_true', help='Train/test the regressor')
 
     parser.add_argument('-g','--gnn', action='store_true', help='Use a graph neural network to model the layers of the ml model')
+
+    parser.add_argument('-f', '--folder', action='store', help='Set the folder you want the model outputs to be created within')
 
     args = parser.parse_args()
     args_dict = vars(args)
@@ -479,11 +488,12 @@ if __name__ == "__main__":
     # whether or not to use the GNN
     is_graph = args_dict['gnn']
 
-    print("Beginning...")
+    # folder to store all the outputs into
+    folder = args_dict['folder']
 
     # perform the testing and training depending on arguments
-    perform_train_and_test(train, test, regression, classification, skip_display_intermediate, is_graph)
-
+    print("Beginning...")
+    perform_train_and_test(train, test, regression, classification, skip_display_intermediate, is_graph, folder)
     print("Done")
     
 
