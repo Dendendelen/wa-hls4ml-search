@@ -125,30 +125,67 @@ def preprocess_features(data, binary_feature_names, numeric_feature_names, categ
 def parse_json_string(json):
     ''' Parse the model information out of a JSON string ''' 
     #TODO: implement
-    return json
+
+    nodes_count = np.asarray([json[0], json[1]])
+
+    source = np.zeros((1,)).astype('int64')
+    target = np.ones((1,)).astype('int64')
+
+    activation = np.zeros((1,3)).astype('int64')
+    # activation[0, 0] = 1
+
+    density = np.ones((1,)).astype('float32')
+    dropout = np.zeros((1,)).astype('float32')
+
+    return nodes_count, source, target, activation, density, dropout
 
 
 def create_graph_tensor(input_values, input_json):
     ''' Turn the data into the form of a GraphTensor to allow for GNN use ''' 
 
+    # ------------------ testing ---------------
+
+    input_json = input_values[:2]
+
+    input_values_2 = np.asarray(input_values[2:]).astype('int64')
+
+    # --------------------testing -------------- TODO:remove
+
+
     #TODO: check that these match the actual order of parsing
-    precision = input_values[0]
-    rf = input_values[1]
-    strategy = input_values[2:]
+
+    precision = np.asarray(input_values_2).astype('int64')[0]
+    rf = np.asarray(input_values_2).astype('int64')[1]
+    strategy = np.asarray(input_values_2).astype('int64')[2:]
 
     #TODO: parse json into distinct nodes and edges
     nodes_count, source, target, activation, density, dropout = parse_json_string(input_json)
 
     # create GraphTensor from these lists
-    nn_layer = tfgnn.NodeSet.from_fields(features={'nodes':nodes_count}, sizes=tf.shape(nodes_count))
+    nn_layer = tfgnn.NodeSet.from_fields(features={'nodes':tf.cast(nodes_count, tf.int64)}, sizes=(len(nodes_count),))
     nn_adjacency = tfgnn.Adjacency.from_indices(source=('nn_layer', source), target=('nn_layer', target))
-    feedforward = tfgnn.EdgeSet.from_fields(features={'activation': activation, 'density': density, 'dropout': dropout}, sizes= (len(source)), adjacency = nn_adjacency)
-    context = tfgnn.Context.from_fields(features={'rf': [rf], 'precision': [precision], 'strategy': [strategy]})
+    feedforward = tfgnn.EdgeSet.from_fields(features={'activation': activation, 'density': density, 'dropout': dropout}, sizes= (1,), adjacency = nn_adjacency)
+    context = tfgnn.Context.from_fields(features={'rf': [tf.cast(rf, tf.int64)], 'precision': [tf.cast(precision, tf.int64)], 'strategy': [tf.cast(strategy, tf.int64)]})
     
-    return tfgnn.GraphTensor.from_pieces(node_sets={'nn_layer': nn_layer}, edge_sets={'feedforward': feedforward}, context=context)
+    return tfgnn.GraphTensor.from_pieces(node_sets={'nn_layer': nn_layer}, edge_sets={'feedforward': feedforward}, context=context)    
+
+def serialize_graph_data(filename, graph_list):
+    # store to a data file
+    record_file = filename+".tfrecord"
+    with tf.io.TFRecordWriter(record_file) as writer:
+        for graph in graph_list:
+            example = tfgnn.write_example(graph)
+            writer.write(example.SerializeToString())
+
+    
+def unserialize_graph_data(filename, graph_tensor_spec):
+    dataset = tf.data.TFRecordDataset(filenames=[filename+".tfrecord"])
+    dataset = dataset.map(
+        lambda serialized: tfgnn.parse_single_example(graph_tensor_spec, serialized))
+    return dataset
 
 
-def preprocess_data(is_graph = False):
+def preprocess_data(is_graph = False, is_already_serialized = True):
     ''' Preprocess the data '''
 
     input_features = ["d_in", "d_out", "prec", "rf", "strategy"]
@@ -159,47 +196,73 @@ def preprocess_data(is_graph = False):
                              "BRAM_18K_hls", "DSP_hls"]
     categorical_feature_names = ["strategy"]
     # special_feature_names = ["json"]
-    special_feature_names = []
+    special_feature_names = ["model_name"]
 
     _X, y, X_raw, special_data = preprocess_data_from_csv('results/results_format_test.csv', input_features, output_features,
                              binary_feature_names, numeric_feature_names,
                              categorical_feature_names, special_feature_names)
 
-    if (is_graph):
+    if (is_graph and not is_already_serialized):
         i = 0
         graph_tensor_list = []
-        for datapoint in special_data:
-            # tensorize this data into the special graph-tensor format
-            graph_tensor = create_graph_tensor(_X[i], datapoint)
-            graph_tensor_list.append(graph_tensor)
-            i += 1
 
         graph_schema = tfgnn.read_schema("graph_schema.pbtxt")
         graph_tensor_spec = tfgnn.create_graph_spec_from_schema_pb(graph_schema)
 
-        if not graph_tensor_spec.is_compatible_with(graph_tensor_list[0]):
+        for datapoint in special_data:
+            # tensorize this data into the special graph-tensor format
+            graph_tensor = create_graph_tensor(X_raw[i], datapoint)
+            graph_tensor_list.append(graph_tensor)
+            i += 1
+            if i % 100 == 0:
+                print(i)
+
+        confirm_new_spec = tfgnn.create_graph_spec_from_schema_pb(tfgnn.create_schema_pb_from_graph_spec(graph_tensor_list[0]))
+        if not graph_tensor_spec.is_compatible_with(confirm_new_spec):
             print("Error: this tensor does not fit the schema")
             sys.exit(1)
 
         X = graph_tensor_list
-        #TODO: check if works
     else:
         X = _X
+        print(X.shape, y.shape)
 
     # Split the data 70 - 20 - 10 train test val
     # Train and test
-    print(X.shape, y.shape)
     print("X Data: ",input_features)
     print(X)
     print("Y Data: ",output_features)
     print(y[0])
-    return sklearn.model_selection.train_test_split(X, y, X_raw,  test_size=0.2, random_state=42, shuffle=True)
+
+    X_train, X_test, y_train, y_test, X_raw_train, X_raw_test = sklearn.model_selection.train_test_split(X, y, X_raw,  test_size=0.2, random_state=42, shuffle=True)
+
+
+    if (is_graph):
+        graph_schema = tfgnn.read_schema("graph_schema.pbtxt")
+        graph_tensor_spec = tfgnn.create_graph_spec_from_schema_pb(graph_schema)
+
+        if not is_already_serialized:
+            serialize_graph_data("train_for_gnn", X_train)
+        train_dataset = unserialize_graph_data("train_for_gnn", graph_tensor_spec)
+        train_dataset = next(iter(train_dataset.batch(len(X_train), drop_remainder=True)))
+
+        if not is_already_serialized:
+            serialize_graph_data("test_for_gnn", X_test)
+        test_dataset = unserialize_graph_data("test_for_gnn", graph_tensor_spec)
+        test_dataset = next(iter(test_dataset.batch(len(X_test), drop_remainder=True)))
+
+        X_train = train_dataset.merge_batch_to_components()
+        X_test = test_dataset.merge_batch_to_components()
+
+    return X_train, X_test, y_train, y_test, X_raw_train, X_raw_test
 
 
 def train_classifier(X_train, y_train, folder_name):
     ''' Train classification model '''
 
-    model = wa_hls4ml_model.create_model_classification()
+    #TODO: make this an argument
+    # model = wa_hls4ml_model.create_model_classification()
+    model = wa_hls4ml_model.create_model_gnn()
 
     adam = AdamW(learning_rate=0.001)
     model.compile(optimizer=adam, loss=tf.keras.losses.Hinge(), metrics=['mse', 'mae'])
@@ -215,11 +278,11 @@ def train_classifier(X_train, y_train, folder_name):
     history = model.fit(
         X_train,
         y_train,
-        batch_size=256,
-        epochs=250,
-        validation_split=0.125,
-        shuffle=True,
-        callbacks=callbacks.callbacks,
+        # batch_size=256,
+        # epochs=250,
+        # # validation_split=0.125,
+        # shuffle=True,
+        # callbacks=callbacks.callbacks,
     )
     wa_hls4ml_data_plot.plot_loss('classifier', history, folder_name)
     
@@ -255,7 +318,7 @@ def train_regressor(X_train, y_train, output_features, graph, folder_name):
             y_train_feature,
             batch_size=128,
             epochs=200,
-            validation_split=0.125,
+            # validation_split=0.125,
             shuffle=True,
             callbacks=callbacks.callbacks,
         )

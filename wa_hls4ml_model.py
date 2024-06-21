@@ -1,4 +1,5 @@
 from tensorflow import keras
+import tensorflow as tf
 
 from keras.models import Sequential
 from keras.layers import Dense, Activation, BatchNormalization, Dropout
@@ -65,7 +66,8 @@ def gnn_set_initial_states():
     def node_sets_fn(node_set, node_set_name):
         if node_set_name == 'nn_layer':
             # embedding for the nodes variable
-            return Dense(64, activation='leaky_relu')(node_set['nodes'])
+            embedded = tf.keras.layers.Embedding(1, 4)(node_set['nodes'])            
+            return Dense(64, activation='leaky_relu')(embedded)
         else:
             print("Unrecognized node feature")
             sys.exit(1)
@@ -74,12 +76,12 @@ def gnn_set_initial_states():
         if edge_set_name == 'feedforward':
             
             # get all edge features
-            activation_1 = (edge_set['activation'])[:, 0]
-            activation_2 = (edge_set['activation'])[:, 1]
-            activation_3 = (edge_set['activation'])[:, 2]
+            activation_1 = tf.keras.layers.Embedding(1,4)((edge_set['activation'])[:, 0])
+            activation_2 = tf.keras.layers.Embedding(1,4)((edge_set['activation'])[:, 1])
+            activation_3 = tf.keras.layers.Embedding(1,4)((edge_set['activation'])[:, 2])
 
-            density = edge_set['density']
-            dropout = edge_set['dropout']
+            density = tf.keras.layers.Embedding(1,4)((edge_set['density']))
+            dropout = tf.keras.layers.Embedding(1,4)((edge_set['dropout']))
 
             # concatenate edge variables into one embedding
             #TODO: does this actually work? no clue
@@ -92,19 +94,19 @@ def gnn_set_initial_states():
             print("Unrecognized edge feature")
             sys.exit(1)
     
-    return keras.layers.MapFeatures(node_sets_fn=node_sets_fn, edge_sets_fn=edge_sets_fn, name='graph_embedding')
+    return tfgnn.keras.layers.MapFeatures(node_sets_fn=node_sets_fn, edge_sets_fn=edge_sets_fn, name='graph_embedding')
 
 def gnn_feed(graph):
     ''' Feed the graph through message-passing layers '''
 
     # GNN hidden message-passing layers
-    graph = mt_albis.MtAlbisGraphUpdate(128, kernel_initializer='lecun_uniform')(graph)
-    graph = mt_albis.MtAlbisGraphUpdate(1024, kernel_initializer='lecun_uniform')(graph)
-    graph = mt_albis.MtAlbisGraphUpdate(128, kernel_initializer='lecun_uniform')(graph)
+    graph = mt_albis.MtAlbisGraphUpdate(units=128, message_dim=128, receiver_tag=tfgnn.TARGET, kernel_initializer='lecun_uniform')(graph)
+    graph = mt_albis.MtAlbisGraphUpdate(units=1024, message_dim=128, receiver_tag=tfgnn.TARGET, kernel_initializer='lecun_uniform')(graph)
+    graph = mt_albis.MtAlbisGraphUpdate(units=128, message_dim=128, receiver_tag=tfgnn.TARGET, kernel_initializer='lecun_uniform')(graph)
 
     return graph
 
-def create_model_gnn(X_train, y_train, output_features, folder_name):
+def create_model_gnn():
     ''' Use a GNN framework to train a regression model '''
 
     # use the schema to create an input layer of the right format, to anticipate data
