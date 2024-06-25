@@ -6,8 +6,8 @@ def plot_loss(name, history, folder_name):
     ''' plot losses during training of a model '''
 
     plt.figure(figsize=(10,6))
-    plt.plot(history.history['loss'], label='Training Loss')
-    plt.plot(history.history['val_loss'], label='Validation Loss')
+    plt.plot(history['train'], label='Training Loss')
+    plt.plot(history['val'], label='Validation Loss')
     plt.title('Model loss')
     plt.ylabel('Loss')
     plt.xlabel('Epoch')
