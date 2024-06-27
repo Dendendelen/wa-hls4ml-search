@@ -5,13 +5,21 @@ import os
 def plot_loss(name, history, folder_name):
     ''' plot losses during training of a model '''
 
-    plt.figure(figsize=(10,6))
-    plt.plot(history['train'], label='Training Loss')
-    plt.plot(history['val'], label='Validation Loss')
-    plt.title('Model loss')
-    plt.ylabel('Loss')
-    plt.xlabel('Epoch')
-    plt.legend(loc='upper right')
+    fig, ax1 = plt.subplots(figsize=(10,6))
+
+    lns1 = ax1.plot(history['train'], label='Training Loss')
+    lns2 = ax1.plot(history['val'], label='Validation Loss')
+    ax1.set_title('Model loss')
+    ax1.set_ylabel('Loss')
+    ax1.set_xlabel('Epoch')
+
+    ax2 = ax1.twinx()
+    ax2.set_ylabel('Learning Rate')
+    lns3 = ax2.plot(history['lr'], 'r', label='Learning Rate')
+
+    lns = lns1+lns2+lns3
+    labs = [l.get_label() for l in lns]
+    ax1.legend(lns, labs, loc='upper right')
 
     directory = folder_name+'/plots/training/'
 

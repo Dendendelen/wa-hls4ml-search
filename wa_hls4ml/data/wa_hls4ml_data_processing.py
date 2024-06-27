@@ -1,7 +1,10 @@
 import pandas as pd
 import numpy as np
 import torch
-import sklearn
+import sklearn.model_selection
+
+import torch_geometric as pyg
+from torch_geometric.data import Data
 
 # current I/O:
 #   inputs: d_in,	d_out, prec, rf, strategy
@@ -53,6 +56,7 @@ def preprocess_features(data, binary_feature_names, numeric_feature_names, categ
     if numeric_feature_names:
         for name in numeric_feature_names:
             data[name] = pd.to_numeric(data[name], errors='coerce')
+        print("Numerical features processed, top values:")
         print(data[numeric_feature_names].head())
         if processing_input:
             tensorized_val = torch.tensor(data[numeric_feature_names].astype('float32').values)
@@ -68,9 +72,7 @@ def preprocess_features(data, binary_feature_names, numeric_feature_names, categ
             value = data[name].astype(bool).astype('float32')
             value = torch.tensor(value).unsqueeze(1)
             # value = torch.tensor(2*value - 1).unsqueeze(1)
-
-
-            # value = tf.reshape(value, [-1, 1])
+            
             preprocessed.append(value)
 
     # Step 5: Process categorical features
@@ -89,15 +91,12 @@ def preprocess_features(data, binary_feature_names, numeric_feature_names, categ
             one_hot = torch.zeros(numbered_data.shape[0], len(vocab))
             one_hot.scatter_(1, numbered_data.unsqueeze(1), 1.0)
 
+            print("Categorical feature processed, shape:")
             print(data[name].shape)
-            print(one_hot)
             preprocessed.append(one_hot)
 
     # Step 6: Concatenate all processed features
-
     preprocessed_data = torch.cat(preprocessed, dim=1)
-    print(preprocessed_data)
-
     return preprocessed_data
 
 
@@ -119,52 +118,35 @@ def parse_json_string(json):
     return nodes_count, source, target, activation, density, dropout
 
 
-# def create_graph_tensor(input_values, input_json):
-#     ''' Turn the data into the form of a GraphTensor to allow for GNN use ''' 
+def create_graph_tensor(input_values, input_json):
+    ''' Turn the data into the form of a GraphTensor to allow for GNN use ''' 
 
-#     # ------------------ testing ---------------
+    # ------------------ testing ---------------
 
-#     input_json = input_values[:2]
+    input_json = input_values[:2]
 
-#     input_values_2 = np.asarray(input_values[2:]).astype('int64')
+    input_values_2 = np.asarray(input_values[2:]).astype('float32')
 
-#     # --------------------testing -------------- TODO:remove
+    # --------------------testing -------------- TODO:remove
 
+    #TODO: parse json into distinct nodes and edges
+    nodes_count, source, target, activation, density, dropout = parse_json_string(input_json)
 
-#     #TODO: check that these match the actual order of parsing
+    # concatenate and transpose the adjacency list
+    adjacency_list = torch.einsum('ij -> ji', torch.cat((torch.tensor(source).unsqueeze(1), torch.tensor(target).unsqueeze(1)), dim = 1))
 
-#     precision = np.asarray(input_values_2).astype('int64')[0]
-#     rf = np.asarray(input_values_2).astype('int64')[1]
-#     strategy = np.asarray(input_values_2).astype('int64')[2:]
+    nodes = torch.tensor(nodes_count)
+    edges = torch.cat((torch.tensor(activation), torch.tensor(density).unsqueeze(1), torch.tensor(dropout).unsqueeze(1)), dim = 1)
+    global_features = torch.tensor(input_values_2)
 
-#     #TODO: parse json into distinct nodes and edges
-#     nodes_count, source, target, activation, density, dropout = parse_json_string(input_json)
+    # add the number of edges itself as a global feature
+    global_features = torch.cat((global_features, torch.tensor(source.shape[0]).unsqueeze(0)))
+    graph_datapoint = Data(x=nodes, edge_index=adjacency_list, edge_attr=edges, y = global_features)
 
-#     # create GraphTensor from these lists
-#     nn_layer = tfgnn.NodeSet.from_fields(features={'nodes':tf.cast(nodes_count, tf.int64)}, sizes=(len(nodes_count),))
-#     nn_adjacency = tfgnn.Adjacency.from_indices(source=('nn_layer', source), target=('nn_layer', target))
-#     feedforward = tfgnn.EdgeSet.from_fields(features={'activation': activation, 'density': density, 'dropout': dropout}, sizes= (1,), adjacency = nn_adjacency)
-#     context = tfgnn.Context.from_fields(features={'rf': [tf.cast(rf, tf.int64)], 'precision': [tf.cast(precision, tf.int64)], 'strategy': [tf.cast(strategy, tf.int64)]})
-    
-#     return tfgnn.GraphTensor.from_pieces(node_sets={'nn_layer': nn_layer}, edge_sets={'feedforward': feedforward}, context=context)    
-
-# def serialize_graph_data(filename, graph_list):
-#     # store to a data file
-#     record_file = filename+".tfrecord"
-#     with tf.io.TFRecordWriter(record_file) as writer:
-#         for graph in graph_list:
-#             example = tfgnn.write_example(graph)
-#             writer.write(example.SerializeToString())
-
-    
-# def unserialize_graph_data(filename, graph_tensor_spec):
-#     dataset = tf.data.TFRecordDataset(filenames=[filename+".tfrecord"])
-#     dataset = dataset.map(
-#         lambda serialized: tfgnn.parse_single_example(graph_tensor_spec, serialized))
-#     return dataset
+    return graph_datapoint   
 
 
-def preprocess_data(is_graph = False, is_already_serialized = True):
+def preprocess_data(is_graph = False, is_already_serialized = False):
     ''' Preprocess the data '''
 
     input_features = ["d_in", "d_out", "prec", "rf", "strategy"]
@@ -185,17 +167,12 @@ def preprocess_data(is_graph = False, is_already_serialized = True):
         graph_tensor_list = []
 
         for datapoint in special_data:
-            # tensorize this data into the special graph-tensor format
-            graph_tensor = create_graph_tensor(X_raw[i], datapoint)
+            # tensorize this data into the torch graph-based data format
+            graph_tensor = create_graph_tensor(_X[i], datapoint)
             graph_tensor_list.append(graph_tensor)
             i += 1
             if i % 100 == 0:
-                print(i)
-
-        # confirm_new_spec = tfgnn.create_graph_spec_from_schema_pb(tfgnn.create_schema_pb_from_graph_spec(graph_tensor_list[0]))
-        # if not graph_tensor_spec.is_compatible_with(confirm_new_spec):
-        #     print("Error: this tensor does not fit the schema")
-        #     sys.exit(1)
+                print("Processing special feature " + str(i))
 
         X = graph_tensor_list
     else:
@@ -205,28 +182,7 @@ def preprocess_data(is_graph = False, is_already_serialized = True):
     # Split the data 70 - 20 - 10 train test val
     # Train and test
     print("X Data: ",input_features)
-    print(X)
     print("Y Data: ",output_features)
-    print(y[0])
 
     X_train, X_test, y_train, y_test, X_raw_train, X_raw_test = sklearn.model_selection.train_test_split(X, y, X_raw,  test_size=0.2, random_state=42, shuffle=True)
-
-
-    # if (is_graph):
-    #     graph_schema = tfgnn.read_schema("graph_schema.pbtxt")
-    #     graph_tensor_spec = tfgnn.create_graph_spec_from_schema_pb(graph_schema)
-
-    #     if not is_already_serialized:
-    #         serialize_graph_data("train_for_gnn", X_train)
-    #     train_dataset = unserialize_graph_data("train_for_gnn", graph_tensor_spec)
-    #     train_dataset = next(iter(train_dataset.batch(len(X_train), drop_remainder=True)))
-
-    #     if not is_already_serialized:
-    #         serialize_graph_data("test_for_gnn", X_test)
-    #     test_dataset = unserialize_graph_data("test_for_gnn", graph_tensor_spec)
-    #     test_dataset = next(iter(test_dataset.batch(len(X_test), drop_remainder=True)))
-
-    #     X_train = train_dataset.merge_batch_to_components()
-    #     X_test = test_dataset.merge_batch_to_components()
-
     return X_train, X_test, y_train, y_test, X_raw_train, X_raw_test

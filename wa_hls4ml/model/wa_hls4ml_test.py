@@ -1,11 +1,13 @@
 import numpy as np
 import torch
 
+from torch_geometric import loader as gloader
+
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, confusion_matrix
 
-from wa_hls4ml_model import load_model
-from wa_hls4ml_plotly import plot_results
-from wa_hls4ml_data_plot import plot_histograms
+from model.wa_hls4ml_model import load_model
+from data.wa_hls4ml_plotly import plot_results
+from data.wa_hls4ml_data_plot import plot_histograms
 
 def calculate_metrics(y_test, y_pred):
     ''' Calculate out MAE, MSE, RMSE, and R^2 '''
@@ -21,7 +23,7 @@ def calculate_metrics(y_test, y_pred):
     print(f'R-squared (R2 Score): {r2}')
 
 
-def display_results_classifier(X_test, X_raw_test, y_test, output_features, folder_name):
+def display_results_classifier(X_test, X_raw_test, y_test, output_features, folder_name, is_graph=False):
     ''' Display the results of the classification model '''
 
     model = load_model(folder_name+'/classification')
@@ -29,24 +31,28 @@ def display_results_classifier(X_test, X_raw_test, y_test, output_features, fold
     with torch.no_grad():
 
         # Predict the output for X_test
-        y_pred = model(torch.tensor(X_test)).detach().numpy()
+        if is_graph:
+            X_loader = gloader.DataLoader(X_test, batch_size=len(X_test))
+            X = next(iter(X_loader))
+            y_pred = model(X).detach().numpy()
+        else:
+            y_pred = model(torch.tensor(X_test)).detach().numpy()
 
-        # Calculate metrics
-        calculate_metrics(y_test, y_pred)
+    # Calculate metrics
+    calculate_metrics(y_test, y_pred)
 
-        # Calculate confusion matrix
-        y_pred_binary = np.where(y_pred > 0.5, 1, 0)
-        confusion = confusion_matrix(y_pred_binary, y_test)
-        print('Confusion matrix:')
-        print(confusion)
-
+    # Calculate confusion matrix
+    y_pred_binary = np.where(y_pred > 0.5, 1, 0)
+    confusion = confusion_matrix(y_pred_binary, y_test)
+    print('Confusion matrix:')
+    print(confusion)
 
     # plot our classification results
     y_test_2d = np.reshape(y_test, (y_test.shape[0], 1))
     plot_results("classifier", False, y_test_2d, y_pred, X_raw_test, output_features, folder_name)
 
 
-def display_results_regressor(X_test, X_raw_test, y_test, output_features, folder_name):
+def display_results_regressor(X_test, X_raw_test, y_test, output_features, folder_name, is_graph):
     ''' Display the results of the regression models '''
 
     y_pred = np.empty(y_test.shape)
@@ -56,10 +62,16 @@ def display_results_regressor(X_test, X_raw_test, y_test, output_features, folde
 
         model = load_model(folder_name+'/regression_'+feature)
 
-        torch.no_grad()
-        # Predict the output of this specific feature for X_test
-        y_pred_part = model(torch.tensor(X_test)).detach().numpy()
-        print(y_pred_part.shape)
+        with torch.no_grad():
+            # Predict the output of this specific feature for X_test
+            if is_graph:
+                X_loader = gloader.DataLoader(X_test, batch_size=len(X_test))
+                X = next(iter(X_loader))
+                y_pred_part = model(X).detach().numpy()
+            else:
+                y_pred_part = model(torch.tensor(X_test)).detach().numpy()
+
+            print("Part " + feature + ": " + str(y_pred_part.shape))
 
         # Consolidate feature predictions
         y_pred[:, i] = y_pred_part[:, 0]
@@ -114,6 +126,7 @@ def test_regression_classification_union(X_test, X_raw_test, y_test, features_wi
     # set the classification predictions as the 0/1 binary for error calc
     y_pred[:, -1] = class_binary[:, 0]
 
+    print("Added the classification predictions to the output, shape:")
     print(y_pred.shape)
 
     # Calculate metrics

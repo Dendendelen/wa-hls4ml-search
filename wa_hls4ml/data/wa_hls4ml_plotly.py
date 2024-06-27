@@ -62,6 +62,7 @@ def plot_results(name, mpl_plots, y_test, y_pred, X_raw_test, output_features, f
         # Iterate over each strategy
         for strategy in [0, 1]:
             # Create a mask for the current strategy
+            X_raw_test = np.asarray(X_raw_test)
             mask = X_raw_test[:,
                    strategy + 4] == 1  # assuming the 'strategy' is the 5th and 6th feature in your input data
             text_arr = [

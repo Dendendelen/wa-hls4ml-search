@@ -9,11 +9,11 @@ import matplotlib.pyplot as plt
 import torch.utils
 import torch.utils.data
 
-from wa_hls4ml_plotly import plot_results
-from wa_hls4ml_model import save_model, load_model
-from wa_hls4ml_train import train_classifier, train_regressor
-from wa_hls4ml_test import calculate_metrics, display_results_classifier,display_results_regressor, test_regression_classification_union
-from wa_hls4ml_data_processing import preprocess_data
+from data.wa_hls4ml_plotly import plot_results
+from model.wa_hls4ml_model import save_model, load_model
+from model.wa_hls4ml_train import train_classifier, train_regressor
+from model.wa_hls4ml_test import calculate_metrics, display_results_classifier,display_results_regressor, test_regression_classification_union
+from data.wa_hls4ml_data_processing import preprocess_data
 
 
 def perform_train_and_test(train, test, regression, classification, skip_intermediates, is_graph, folder_name = "model_1"):
@@ -31,9 +31,9 @@ def perform_train_and_test(train, test, regression, classification, skip_interme
     # train the classifier
     if train and classification:
         print("Training the classifier...")
-        train_classifier(X_train, y_train_classifier, folder_name)
+        train_classifier(X_train, y_train_classifier, folder_name, is_graph)
     if test and classification and not skip_display_intermediate:
-        display_results_classifier(X_test, X_raw_test, y_test_classifier, feature_classification_task, folder_name)
+        display_results_classifier(X_test, X_raw_test, y_test_classifier, feature_classification_task, folder_name, is_graph)
 
     # This is all we do if we are doing classification alone
     if not regression:
@@ -44,21 +44,35 @@ def perform_train_and_test(train, test, regression, classification, skip_interme
     succeeded_synth_gt_train = np.nonzero(y_train_classifier)
 
     # only train regressor on successes
-    X_succeeded_train = X_train[succeeded_synth_gt_train]
+    if is_graph:
+        X_succeeded_train = []
+        X_raw_succeeded_train = []
+        for i in succeeded_synth_gt_train[0]:
+            X_succeeded_train.append(X_train[i])
+            X_raw_succeeded_train.append(X_raw_train[i])
+    else:
+        X_succeeded_train = X_train[succeeded_synth_gt_train]
+        X_raw_succeeded_train = X_raw_train[succeeded_synth_gt_train]
     y_succeeded_train = (y_train[succeeded_synth_gt_train])[:, :-1]
-    X_raw_succeeded_train = X_raw_train[succeeded_synth_gt_train]
 
     # only test regressor alone on successes
-    X_succeeded_test = X_test[succeeded_synth_gt_test]
+    if is_graph:
+        X_succeeded_test = []
+        X_raw_succeeded_test = []
+        for i in succeeded_synth_gt_test[0]:
+            X_succeeded_test.append(X_test[i])
+            X_raw_succeeded_test.append(X_raw_test[i])
+    else:
+        X_succeeded_test = X_test[succeeded_synth_gt_test]
+        X_raw_succeeded_test = X_raw_test[succeeded_synth_gt_test]
     y_succeeded_test = (y_test[succeeded_synth_gt_test])[:, :-1]
-    X_raw_succeeded_test = X_raw_test[succeeded_synth_gt_test]
 
     # train the regressor
     if train and regression:
         print("Training the regressor...")
-        train_regressor(X_succeeded_train, y_succeeded_train, features_without_classification, is_graph, folder_name)
+        train_regressor(X_succeeded_train, y_succeeded_train, features_without_classification, folder_name, is_graph)
     if test and regression and not skip_intermediates:
-        display_results_regressor(X_succeeded_test, X_raw_succeeded_test, y_succeeded_test, features_without_classification, folder_name)
+        display_results_regressor(X_succeeded_test, X_raw_succeeded_test, y_succeeded_test, features_without_classification, folder_name, is_graph)
 
     # if we are not doing both regression and classification, we are done
     if not regression or not classification or not test:
@@ -124,6 +138,9 @@ if __name__ == "__main__":
 
     # folder to store all the outputs into
     folder = args_dict['folder']
+
+    # redirect the input into a models folder
+    folder = 'models/'+folder
 
     # perform the testing and training depending on arguments
     print("Beginning...")
