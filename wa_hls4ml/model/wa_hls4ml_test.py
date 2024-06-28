@@ -85,7 +85,7 @@ def display_results_regressor(X_test, X_raw_test, y_test, output_features, folde
     plot_results("regression_all", False, y_test, y_pred, X_raw_test, output_features, folder_name)
 
 
-def test_regression_classification_union(X_test, X_raw_test, y_test, features_without_classification, feature_classification_task, folder_name):
+def test_regression_classification_union(X_test, X_raw_test, y_test, features_without_classification, feature_classification_task, folder_name, is_graph = False):
     '''Test the effectiveness of the whole model, first doing classification, and using that result to help with regression'''
 
     features_with_classification = features_without_classification + feature_classification_task
@@ -93,7 +93,12 @@ def test_regression_classification_union(X_test, X_raw_test, y_test, features_wi
     model_classifier = load_model(folder_name+"/classification")
 
     # predict the classes of the test dataset, then convert to binary 1/-1
-    class_pred = model_classifier(torch.tensor(X_test)).detach().numpy()
+    if is_graph:
+        X_loader = gloader.DataLoader(X_test, batch_size=len(X_test))
+        X = next(iter(X_loader))
+        class_pred = model_classifier(X).detach().numpy()
+    else:
+        class_pred = model_classifier(torch.tensor(X_test)).detach().numpy()
     class_binary = np.where(class_pred > 0.5, 1, 0)
     print("Binary classification created, shape:")
     print(class_binary.shape)
@@ -102,15 +107,26 @@ def test_regression_classification_union(X_test, X_raw_test, y_test, features_wi
     succeeded_idx = np.nonzero(class_binary)[0]
     print("Indices of success created, shape:")
     print(succeeded_idx.shape)
-    X_test_only_success = X_test[succeeded_idx]
 
-    y_regression_pred = np.empty((X_test_only_success.shape[0], 6))
+    if is_graph:
+        X_test_only_success = []
+        for i in succeeded_idx:
+            X_test_only_success.append(X_test[i])
+        y_regression_pred = np.empty((len(X_test_only_success), 6))
+    else:
+        X_test_only_success = X_test[succeeded_idx]
+        y_regression_pred = np.empty((X_test_only_success.shape[0], 6))
 
     i = 0
     for feature in features_without_classification:
         model_regressor = load_model(folder_name+'/regression_'+feature+'/')
 
-        y_regression_pred_slice = model_regressor(torch.tensor(X_test_only_success)).detach().numpy()
+        if is_graph:
+            X_loader = gloader.DataLoader(X_test_only_success, batch_size=len(X_test_only_success))
+            X = next(iter(X_loader))
+            y_regression_pred_slice = model_regressor(X).detach().numpy()
+        else:
+            y_regression_pred_slice = model_regressor(torch.tensor(X_test_only_success)).detach().numpy()
         y_regression_pred[:, i] = y_regression_pred_slice[:, 0]
         i += 1
 

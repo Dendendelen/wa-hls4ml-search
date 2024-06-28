@@ -124,19 +124,21 @@ class GraphNet(nn.Module):
         preprocessing_global = collections.OrderedDict()
         preprocessing_global['preproc_glob_fc1'] = nn.Linear(in_features=num_global_features, out_features=512)
         preprocessing_global['preproc_glob_relu1'] = nn.LeakyReLU()
-        preprocessing_node['preproc_glob_dropout'] = nn.Dropout(0.4)
+        preprocessing_node['preproc_glob_dropout'] = nn.Dropout(0.3)
         self.preprocessing_glob_nn = nn.Sequential(preprocessing_global)
 
         self.gat_layer = gnn.GATv2Conv(512, 1024, 1, edge_dim=511, add_self_loops=False)
-        self.middle_message_layer = gnn.GeneralConv(1024, 1024, 512, directed_msg=False)
+        self.middle_message_layer = gnn.GeneralConv(1024, 1024, 512)
 
         self.pooling_nodes = gnn.pool.global_mean_pool
-        self.pooling_edges = gnn.pool.global_mean_pool
+        self.pooling_edges = gnn.pool.global_max_pool
 
         final_pool = collections.OrderedDict()
-        final_pool['pool_fc1'] = nn.Linear(in_features=2048, out_features=256)
-        final_pool['pool_relu1'] = nn.LeakyReLU()
+        final_pool['pool_fc1'] = nn.Linear(in_features=2048, out_features=1024)
+        final_pool['pool_relu1'] = nn.ELU()
         final_pool['pool_dropout'] = nn.Dropout(0.2)
+        final_pool['pool_fc2'] = nn.Linear(in_features=1024, out_features=256)
+        final_pool['pool_relu2'] = nn.LeakyReLU()
         final_pool['pool_output'] = nn.Linear(in_features=256, out_features=1)
 
         # if doing binary classification, we need a final sigmoid layer to turn logits into 0-1 range
@@ -145,8 +147,19 @@ class GraphNet(nn.Module):
 
         self.final_pooling_layer = nn.Sequential(final_pool)
 
+        def init_weights(m):
+            if isinstance(m, nn.Linear):
+                torch.nn.init.xavier_uniform_(m.weight)
+                m.bias.data.fill_(0.0)
+
+        self.preprocessing_node_nn.apply(init_weights)
+        self.preprocessing_edge_nn.apply(init_weights)
+        self.preprocessing_glob_nn.apply(init_weights)
+        self.final_pooling_layer.apply(init_weights)
+
 
     def preprocessing_layer(self, x, edge_index, edge_attr, y):
+        ''' Perform a pre-convolution processing pass on the data, adding self-loops and passing features through individual neural nets '''
 
         edge_index, edge_attr = add_self_loops(edge_index, edge_attr=edge_attr, num_nodes=x.size(0))
         
@@ -167,6 +180,8 @@ class GraphNet(nn.Module):
 
 
     def message_passing_layer(self, x, edge_index, edge_attr):
+        ''' Perform the actual meat of the GNN, a Graph Attention layer followed by a Graph Convolution layer (which incorporates attention as a feature) '''
+
         out, edge_tuple = self.gat_layer(x=x, edge_index=edge_index, edge_attr=edge_attr, return_attention_weights=True)
         edge_attention = edge_tuple[1]
 
@@ -181,6 +196,7 @@ class GraphNet(nn.Module):
 
 
     def pooling_layer(self, x, edge_index, edge_attr, y, batch_vector):
+        ''' Perform pooling of the data, combining features for all nodes/all edges into a single respective feature, and then putting the combined lump through a neural net to produce final output '''
 
         # pool the nodes
         out_nodes = self.pooling_nodes(x, batch=batch_vector)
@@ -205,8 +221,10 @@ class GraphNet(nn.Module):
                 edge_batch_vector[index] = i
                 index += 1
 
+        # pool the edges
         out_edges = self.pooling_edges(edge_attr, batch=edge_batch_vector)
 
+        # concatenate the pooled nodes, pooled edges, and global features into one large feature vector. Then, send that through a final NN for regression output
         pooled = torch.cat((out_nodes, out_edges, y), dim=1)
         out = self.final_pooling_layer(pooled)
 

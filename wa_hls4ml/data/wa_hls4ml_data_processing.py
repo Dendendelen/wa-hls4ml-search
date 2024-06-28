@@ -6,6 +6,8 @@ import sklearn.model_selection
 import torch_geometric as pyg
 from torch_geometric.data import Data
 
+import sys
+
 # current I/O:
 #   inputs: d_in,	d_out, prec, rf, strategy
 #   outputs: TargetClockPeriod_hls,	WorstLatency_hls, IntervalMax_hls, FF_hls, LUT_hls, BRAM_18K_hls, DSP_hls, hls_synth_success
@@ -158,7 +160,11 @@ def preprocess_data(is_graph = False, is_already_serialized = False):
     # special_feature_names = ["json"]
     special_feature_names = ["model_name"]
 
-    _X, y, X_raw, special_data = preprocess_data_from_csv('results/results_format_test.csv', input_features, output_features,
+    # _X, y, X_raw, special_data = preprocess_data_from_csv('../results/results_format_test.csv', input_features, output_features,
+    #                          binary_feature_names, numeric_feature_names,
+    #                          categorical_feature_names, special_feature_names)
+
+    _X, y, X_raw, special_data = preprocess_data_from_csv('../results/results_combined.csv', input_features, output_features,
                              binary_feature_names, numeric_feature_names,
                              categorical_feature_names, special_feature_names)
 

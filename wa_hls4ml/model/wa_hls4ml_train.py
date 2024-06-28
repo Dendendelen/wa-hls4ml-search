@@ -12,16 +12,20 @@ import copy
 import model.wa_hls4ml_model as wa_hls4ml_model
 import data.wa_hls4ml_data_plot as wa_hls4ml_data_plot
 
-from wa_hls4ml_model import save_model
+from model.wa_hls4ml_model import save_model
 
 import sys
 
 def train_step(dataloader, model, loss_fn, optimizer, batch_size, is_graph, size):
+    ''' Perform the training step on the epoch, going through each batch and performing optimization '''
+
+    # our graph data is in a different format than the numeric data, so we need to have a different iterator for it
     if is_graph:
         iterator = zip(enumerate(dataloader[0]), enumerate(dataloader[1]))
     else:
         iterator = enumerate(dataloader)
 
+    # switch model to train mode
     model.train()
     for item in iterator:
         if is_graph:
@@ -32,7 +36,6 @@ def train_step(dataloader, model, loss_fn, optimizer, batch_size, is_graph, size
             batch, (X, y) = item
 
         # Compute prediction and loss
-
         pred = model(X)
         loss = loss_fn(pred[:,0], y)
 
@@ -41,22 +44,30 @@ def train_step(dataloader, model, loss_fn, optimizer, batch_size, is_graph, size
         optimizer.step()
         optimizer.zero_grad()
 
+        # Report batch results
         if batch % 4 == 0:
             loss_val, current = loss.item(), batch * batch_size + len(X)
             print(f"loss: {loss_val:>7f}  [{current:>5d}/{size:>5d}]")
 
+    # output the last training loss, to plot in history
     return loss.item()
 
 def val_step(dataloader, model, loss_fn, is_graph):
+    ''' Perform the validation step, checking performance of the current model on val data to regulate lr '''
+
+    # switch model to evaluation mode
     model.eval()
     num_batches = len(dataloader)
     test_loss = 0
 
-    # Evaluating the model with torch.no_grad() ensures that no gradients are computed during test mode
-    # also serves to reduce unnecessary gradient computations and memory usage for tensors with requires_grad=True
     with torch.no_grad():
+
+        if is_graph:
+            iterator = zip(dataloader[0], dataloader[1])
+        else:
+            iterator = dataloader
         
-        for X, y in zip(dataloader[0], dataloader[1]):
+        for X, y in iterator:
             pred = model(X)
             test_loss += loss_fn(pred[:,0], y).item()
 
@@ -65,14 +76,18 @@ def val_step(dataloader, model, loss_fn, is_graph):
 
     return test_loss
 
-def general_train(X_train, y_train, model, loss_function, is_graph, batch_size, test_size, epochs, name, folder, learning_rate, weight_decay, patience, cooldown, factor, min_lr, epsilon):
 
+def general_train(X_train, y_train, model, loss_function, is_graph, batch_size, test_size, epochs, name, folder, learning_rate, weight_decay, patience, cooldown, factor, min_lr, epsilon):
+    ''' Function for performing the training routine given the input data, model, and parameters '''
+
+    # create optimizer and scheduler based on input specifications
     adam = torch.optim.AdamW(lr=learning_rate, params=model.parameters(), weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(adam, patience=patience, cooldown=cooldown, factor=factor, min_lr=min_lr, eps=epsilon)
 
     # create a train and validation set
     X_only_train, X_val, y_only_train, y_val = sklearn.model_selection.train_test_split(X_train, y_train, random_state=45, test_size=test_size)
 
+    # set up data loading
     if is_graph:
         train_X_dataloader = gloader.DataLoader(X_only_train, batch_size=batch_size)
         train_y_dataloader = gloader.DataLoader(torch.tensor(y_only_train), batch_size=batch_size)
@@ -111,6 +126,7 @@ def general_train(X_train, y_train, model, loss_function, is_graph, batch_size, 
         history['val'].append(test_loss)
         scheduler.step(test_loss)
 
+        # save the model if it has outcompeted the previous best on the validation set
         if test_loss < best_loss:
             best_loss = test_loss
             best_model = copy.deepcopy(model)
@@ -133,7 +149,7 @@ def train_classifier(X_train, y_train, folder_name, is_graph):
     loss_function = torch.nn.BCELoss()
     
     test_size = .125
-    batch = 256
+    batch = 512
     epochs = 250
 
     learning_rate = 0.0001
@@ -150,14 +166,13 @@ def train_regressor(X_train, y_train, output_features, folder_name, is_graph):
     ''' Train regression models for all features '''
 
     test_size = .125
-    batch = 64
-    epochs = 500
+    batch = 512
+    epochs = 250
 
-    learning_rate = 0.005
-    weight_decay = 0.005
+    learning_rate = 0.01
+    weight_decay = 0.001
     patience = 10
-    cooldown = 8
-    #cooldown best: 6
+    cooldown = 6
     factor = 0.5
     min_lr = 0.000000001
     epsilon = 0.000001
@@ -169,9 +184,6 @@ def train_regressor(X_train, y_train, output_features, folder_name, is_graph):
         print("Training " + feature + "...")
         y_train_feature = y_train[:, i]
         i += 1
-
-        if feature != "LUT_hls":
-            continue
 
         name = 'regression_'+feature
 

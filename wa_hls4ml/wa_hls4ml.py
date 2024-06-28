@@ -79,7 +79,7 @@ def perform_train_and_test(train, test, regression, classification, skip_interme
         return
     
     print("Testing the models in union...")
-    test_regression_classification_union(X_test, X_raw_test, y_test, features_without_classification, feature_classification_task, folder_name)
+    test_regression_classification_union(X_test, X_raw_test, y_test, features_without_classification, feature_classification_task, folder_name, is_graph)
 
 
 
