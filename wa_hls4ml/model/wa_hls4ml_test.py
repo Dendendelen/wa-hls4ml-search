@@ -28,7 +28,8 @@ def calculate_metrics(y_test, y_pred):
 def display_results_classifier(X_test, X_raw_test, y_test, output_features, folder_name, is_graph=False):
     ''' Display the results of the classification model '''
 
-    model = load_model(folder_name+'/classification')
+    model = load_model(folder_name+'/classification').to("cpu")
+    model.switch_device("cpu")
     model.eval()
 
     with torch.no_grad():
@@ -62,9 +63,7 @@ def display_results_regressor(X_test, X_raw_test, y_test, output_features, folde
 
     i = 0
     for feature in output_features:
-        if feature != "LUT_hls":
-            i += 1
-            continue
+
         model = load_model(folder_name+'/regression_'+feature).to("cpu")
         model.switch_device("cpu")
         model.eval()
@@ -76,7 +75,7 @@ def display_results_regressor(X_test, X_raw_test, y_test, output_features, folde
                 X = next(iter(X_loader))
                 y_pred_part = model(X).detach().numpy()
                 from model.wa_hls4ml_train import bounded_percentile_loss
-                print(torch.mean(bounded_percentile_loss(torch.tensor(y_pred_part[:,0]), torch.tensor(y_test[:, i]))))
+                print(torch.mean(torch.nn.functional.l1_loss(torch.tensor(y_pred_part[:,0]), torch.tensor(y_test[:, i]))))
                 # print(torch.nn.functional.huber_loss(torch.tensor(y_pred_part[:,0]), torch.tensor(y_test[:, i])))
                 # print("saving...")
                 # np.save("dump_lut_pred.npy",y_pred_part[:,0])
@@ -108,6 +107,7 @@ def test_regression_classification_union(X_test, X_raw_test, y_test, features_wi
     features_with_classification = features_without_classification + feature_classification_task
 
     model_classifier = load_model(folder_name+"/classification").to("cpu")
+    model_classifier.switch_device("cpu")
 
     # predict the classes of the test dataset, then convert to binary 1/0
     if is_graph:
@@ -136,7 +136,8 @@ def test_regression_classification_union(X_test, X_raw_test, y_test, features_wi
 
     i = 0
     for feature in features_without_classification:
-        model_regressor = load_model(folder_name+'/regression_'+feature+'/')
+        model_regressor = load_model(folder_name+'/regression_'+feature+'/').to("cpu")
+        model_regressor.switch_device("cpu")
 
         if is_graph:
             X_loader = gloader.DataLoader(X_test_only_success, batch_size=len(X_test_only_success))
@@ -161,15 +162,6 @@ def test_regression_classification_union(X_test, X_raw_test, y_test, features_wi
 
     print("Added the classification predictions to the output, shape:")
     print(y_pred.shape)
-
-    # #TODO: remove
-    # mask = X_raw_test[:,1] != np.full((X_raw_test.shape[0]), -1)
-    # mask_idx = np.nonzero(mask)
-
-    # y_pred_2 = y_pred[mask_idx]
-    # y_test_2 = y_test[mask_idx]
-    # X_raw_test_2 = X_raw_test[mask_idx]
-
 
     # Calculate metrics
     calculate_metrics(y_test, y_pred)

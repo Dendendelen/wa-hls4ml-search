@@ -144,7 +144,7 @@ def create_graph_tensor(input_values, input_raw_values, input_json, dev):
 
     # ------------------ testing ---------------
 
-    input_values_2 = np.asarray(input_values[0:]).astype('float32')
+    input_values_2 = np.asarray(input_values[3:]).astype('float32')
     
     input_json = input_values[:3]
     if input_raw_values[1] == -1:
@@ -162,7 +162,6 @@ def create_graph_tensor(input_values, input_raw_values, input_json, dev):
     adjacency_list = torch.einsum('ij -> ji', torch.cat((torch.tensor(source).unsqueeze(1), torch.tensor(target).unsqueeze(1)), dim = 1)).to(dev)
 
     nodes = torch.tensor(nodes_count).unsqueeze(1).to(dev)
-    # edges = torch.cat((torch.tensor(activation), torch.tensor(density).unsqueeze(1), torch.tensor(dropout).unsqueeze(1)), dim = 1)
     edges = torch.tensor(density).unsqueeze(1).to(dev)
     global_features = torch.tensor(input_values_2).to(dev)
 
@@ -184,10 +183,6 @@ def preprocess_data(is_graph = False, input_folder="../results/results_combined.
     categorical_feature_names = ["strategy"]
     # special_feature_names = ["json"]
     special_feature_names = ["model_name"]
-
-    # _X, y, X_raw, special_data = preprocess_data_from_csv('../results/results_format_test.csv', input_features, output_features,
-    #                          binary_feature_names, numeric_feature_names,
-    #                          categorical_feature_names, special_feature_names)
 
     _X, y, X_raw, special_data = preprocess_data_from_csv(input_folder, input_features, output_features,
                              binary_feature_names, numeric_feature_names,

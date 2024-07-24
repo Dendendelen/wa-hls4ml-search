@@ -153,6 +153,7 @@ if __name__ == "__main__":
 
     is_gpu = args_dict['gpu']
 
+    # allow using CUDA
     if is_gpu:
         dev = "cuda"
     else:
