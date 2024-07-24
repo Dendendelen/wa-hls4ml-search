@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 
 
 import matplotlib.pyplot as plt
+import torch
 import torch.utils
 import torch.utils.data
 
@@ -16,13 +17,13 @@ from model.wa_hls4ml_test import calculate_metrics, display_results_classifier,d
 from data.wa_hls4ml_data_processing import preprocess_data
 
 
-def perform_train_and_test(train, test, regression, classification, skip_intermediates, is_graph, folder_name = "model_1"):
+def perform_train_and_test(train, test, regression, classification, skip_intermediates, is_graph, folder_name = "model_1", input_file = "../results/results_combined.csv", dev="cpu"):
 
     features_without_classification = ["WorstLatency_hls", "IntervalMax_hls", "FF_hls", "LUT_hls", "BRAM_18K_hls", "DSP_hls"]
     feature_classification_task = ["hls_synth_success"]
 
     # get raw data out
-    X_train, X_test, y_train, y_test, X_raw_train, X_raw_test = preprocess_data(is_graph)
+    X_train, X_test, y_train, y_test, X_raw_train, X_raw_test = preprocess_data(is_graph, input_file, dev = dev)
 
     # get just the classification task as its own variable
     y_train_classifier = y_train[:, -1]
@@ -31,7 +32,7 @@ def perform_train_and_test(train, test, regression, classification, skip_interme
     # train the classifier
     if train and classification:
         print("Training the classifier...")
-        train_classifier(X_train, y_train_classifier, folder_name, is_graph)
+        train_classifier(X_train, y_train_classifier, folder_name, is_graph, dev)
     if test and classification and not skip_display_intermediate:
         display_results_classifier(X_test, X_raw_test, y_test_classifier, feature_classification_task, folder_name, is_graph)
 
@@ -70,7 +71,7 @@ def perform_train_and_test(train, test, regression, classification, skip_interme
     # train the regressor
     if train and regression:
         print("Training the regressor...")
-        train_regressor(X_succeeded_train, y_succeeded_train, features_without_classification, folder_name, is_graph)
+        train_regressor(X_succeeded_train, y_succeeded_train, features_without_classification, folder_name, is_graph, dev)
     if test and regression and not skip_intermediates:
         display_results_regressor(X_succeeded_test, X_raw_succeeded_test, y_succeeded_test, features_without_classification, folder_name, is_graph)
 
@@ -87,6 +88,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(prog='wa-hls4ml', description='Train or test model for wa-hls4ml', add_help=True)
 
+    parser.add_argument('--gpu', action='store_true', help='Use CUDA GPU processing for training')
+    
     parser.add_argument('--train', action='store_true', help='Train a new surrogate model from the data')
     parser.add_argument('--test', action='store_true', help='Test existing models')
 
@@ -95,8 +98,11 @@ if __name__ == "__main__":
 
     parser.add_argument('-g','--gnn', action='store_true', help='Use a graph neural network to model the layers of the ml model')
 
-    parser.add_argument('-f', '--folder', action='store', help='Set the folder you want the model outputs to be created within')
+    parser.add_argument('-i', '--input', action='store', help="What file to use for input data")
 
+    parser.add_argument('-f', '--folder', action='store', help='Set the folder you want the model outputs to be created within', required=True)
+
+    
     args = parser.parse_args()
     args_dict = vars(args)
 
@@ -113,6 +119,7 @@ if __name__ == "__main__":
     #             print(e)
     # else:
     #     device = "/CPU:0"
+    # torch.cuda.device("cuda")
 
     train = args_dict['train']
     test = args_dict['test']
@@ -142,9 +149,19 @@ if __name__ == "__main__":
     # redirect the input into a models folder
     folder = 'models/'+folder
 
+    input_file = args_dict['input']
+
+    is_gpu = args_dict['gpu']
+
+    # allow using CUDA
+    if is_gpu:
+        dev = "cuda"
+    else:
+        dev = "cpu"
+
     # perform the testing and training depending on arguments
     print("Beginning...")
-    perform_train_and_test(train, test, regression, classification, skip_display_intermediate, is_graph, folder)
+    perform_train_and_test(train, test, regression, classification, skip_display_intermediate, is_graph, folder, input_file, dev)
     print("Done")
     
 

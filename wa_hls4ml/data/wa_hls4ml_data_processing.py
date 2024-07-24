@@ -9,7 +9,7 @@ from torch_geometric.data import Data
 import sys
 
 # current I/O:
-#   inputs: d_in,	d_out, prec, rf, strategy
+#   inputs: d_in, d_2,	d_out, prec, rf, strategy
 #   outputs: TargetClockPeriod_hls,	WorstLatency_hls, IntervalMax_hls, FF_hls, LUT_hls, BRAM_18K_hls, DSP_hls, hls_synth_success
 
 def preprocess_data_from_csv(csv_file, input_features, output_features, _binary_feature_names, _numeric_feature_names, _categorical_feature_names, special_feature_names):
@@ -106,28 +106,52 @@ def parse_json_string(json):
     ''' Parse the model information out of a JSON string ''' 
     #TODO: implement
 
-    nodes_count = np.asarray([json[0], json[1]])
+    if np.isnan(json[1]):
+        nodes_count = np.asarray([json[0], json[2]])
 
-    source = np.zeros((1,)).astype('int64')
-    target = np.ones((1,)).astype('int64')
+        source = np.zeros((1,)).astype('int64')
+        target = np.ones((1,)).astype('int64')
 
-    activation = np.zeros((1,3)).astype('int64')
-    # activation[0, 0] = 1
+        activation = np.zeros((1,3)).astype('int64')
+        # activation[0, 0] = 1
 
-    density = np.ones((1,)).astype('float32')
-    dropout = np.zeros((1,)).astype('float32')
+        density = np.ones((1,)).astype('float32')
+        dropout = np.zeros((1,)).astype('float32')
+    else:
+        nodes_count = np.asarray([json[0], json[1], json[2]])
+
+        source = np.empty((2,))
+        source[0] = 0
+        source[1] = 1
+
+        source = source.astype('int64')
+
+        target = np.empty((2,))
+        target[0] = 1
+        target[1] = 2
+
+        target = target.astype('int64')
+
+        activation = np.zeros((2,3)).astype('int64')
+        density = np.ones((2,)).astype('float32')
+        dropout = np.zeros((2,)).astype('float32')
 
     return nodes_count, source, target, activation, density, dropout
 
 
-def create_graph_tensor(input_values, input_json):
+def create_graph_tensor(input_values, input_raw_values, input_json, dev):
     ''' Turn the data into the form of a GraphTensor to allow for GNN use ''' 
 
     # ------------------ testing ---------------
 
-    input_json = input_values[:2]
+    input_values_2 = np.asarray(input_values[3:]).astype('float32')
+    
+    input_json = input_values[:3]
+    if input_raw_values[1] == -1:
+        input_json[1] = None
+ 
+    # input_values_2 = np.asarray(input_values[3:]).astype('float32')
 
-    input_values_2 = np.asarray(input_values[2:]).astype('float32')
 
     # --------------------testing -------------- TODO:remove
 
@@ -135,36 +159,32 @@ def create_graph_tensor(input_values, input_json):
     nodes_count, source, target, activation, density, dropout = parse_json_string(input_json)
 
     # concatenate and transpose the adjacency list
-    adjacency_list = torch.einsum('ij -> ji', torch.cat((torch.tensor(source).unsqueeze(1), torch.tensor(target).unsqueeze(1)), dim = 1))
+    adjacency_list = torch.einsum('ij -> ji', torch.cat((torch.tensor(source).unsqueeze(1), torch.tensor(target).unsqueeze(1)), dim = 1)).to(dev)
 
-    nodes = torch.tensor(nodes_count)
-    edges = torch.cat((torch.tensor(activation), torch.tensor(density).unsqueeze(1), torch.tensor(dropout).unsqueeze(1)), dim = 1)
-    global_features = torch.tensor(input_values_2)
+    nodes = torch.tensor(nodes_count).unsqueeze(1).to(dev)
+    edges = torch.tensor(density).unsqueeze(1).to(dev)
+    global_features = torch.tensor(input_values_2).to(dev)
 
-    # add the number of edges itself as a global feature
-    global_features = torch.cat((global_features, torch.tensor(source.shape[0]).unsqueeze(0)))
+    # add the number of edges itself as a global feature    
+    global_features = torch.cat((global_features, torch.tensor(source.shape[0]).unsqueeze(0).to(dev)))
     graph_datapoint = Data(x=nodes, edge_index=adjacency_list, edge_attr=edges, y = global_features)
 
     return graph_datapoint   
 
 
-def preprocess_data(is_graph = False, is_already_serialized = False):
+def preprocess_data(is_graph = False, input_folder="../results/results_combined.csv", is_already_serialized = False, dev = "cpu"):
     ''' Preprocess the data '''
 
-    input_features = ["d_in", "d_out", "prec", "rf", "strategy"]
+    input_features = ["d_in", "d_2", "d_out", "prec", "rf", "strategy"]
     output_features = ["WorstLatency_hls", "IntervalMax_hls", "FF_hls", "LUT_hls", "BRAM_18K_hls", "DSP_hls", "hls_synth_success"]
     binary_feature_names = ['hls_synth_success']
-    numeric_feature_names = ["d_in", "d_out", "prec", "rf", "WorstLatency_hls", "IntervalMax_hls", "FF_hls", "LUT_hls",
+    numeric_feature_names = ["d_in", "d_2", "d_out", "prec", "rf", "WorstLatency_hls", "IntervalMax_hls", "FF_hls", "LUT_hls",
                              "BRAM_18K_hls", "DSP_hls"]
     categorical_feature_names = ["strategy"]
     # special_feature_names = ["json"]
     special_feature_names = ["model_name"]
 
-    # _X, y, X_raw, special_data = preprocess_data_from_csv('../results/results_format_test.csv', input_features, output_features,
-    #                          binary_feature_names, numeric_feature_names,
-    #                          categorical_feature_names, special_feature_names)
-
-    _X, y, X_raw, special_data = preprocess_data_from_csv('../results/results_combined.csv', input_features, output_features,
+    _X, y, X_raw, special_data = preprocess_data_from_csv(input_folder, input_features, output_features,
                              binary_feature_names, numeric_feature_names,
                              categorical_feature_names, special_feature_names)
 
@@ -174,10 +194,10 @@ def preprocess_data(is_graph = False, is_already_serialized = False):
 
         for datapoint in special_data:
             # tensorize this data into the torch graph-based data format
-            graph_tensor = create_graph_tensor(_X[i], datapoint)
+            graph_tensor = create_graph_tensor(_X[i], X_raw[i], datapoint, dev)
             graph_tensor_list.append(graph_tensor)
             i += 1
-            if i % 100 == 0:
+            if i % 5000 == 0:
                 print("Processing special feature " + str(i))
 
         X = graph_tensor_list
@@ -191,4 +211,5 @@ def preprocess_data(is_graph = False, is_already_serialized = False):
     print("Y Data: ",output_features)
 
     X_train, X_test, y_train, y_test, X_raw_train, X_raw_test = sklearn.model_selection.train_test_split(X, y, X_raw,  test_size=0.2, random_state=42, shuffle=True)
+
     return X_train, X_test, y_train, y_test, X_raw_train, X_raw_test

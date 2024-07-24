@@ -1,6 +1,8 @@
 import numpy as np
 import torch
 
+import sys
+
 from torch_geometric import loader as gloader
 
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, confusion_matrix
@@ -26,7 +28,9 @@ def calculate_metrics(y_test, y_pred):
 def display_results_classifier(X_test, X_raw_test, y_test, output_features, folder_name, is_graph=False):
     ''' Display the results of the classification model '''
 
-    model = load_model(folder_name+'/classification')
+    model = load_model(folder_name+'/classification').to("cpu")
+    model.switch_device("cpu")
+    model.eval()
 
     with torch.no_grad():
 
@@ -60,7 +64,9 @@ def display_results_regressor(X_test, X_raw_test, y_test, output_features, folde
     i = 0
     for feature in output_features:
 
-        model = load_model(folder_name+'/regression_'+feature)
+        model = load_model(folder_name+'/regression_'+feature).to("cpu")
+        model.switch_device("cpu")
+        model.eval()
 
         with torch.no_grad():
             # Predict the output of this specific feature for X_test
@@ -68,6 +74,16 @@ def display_results_regressor(X_test, X_raw_test, y_test, output_features, folde
                 X_loader = gloader.DataLoader(X_test, batch_size=len(X_test))
                 X = next(iter(X_loader))
                 y_pred_part = model(X).detach().numpy()
+                from model.wa_hls4ml_train import bounded_percentile_loss
+                print(torch.mean(torch.nn.functional.l1_loss(torch.tensor(y_pred_part[:,0]), torch.tensor(y_test[:, i]))))
+                # print(torch.nn.functional.huber_loss(torch.tensor(y_pred_part[:,0]), torch.tensor(y_test[:, i])))
+                # print("saving...")
+                # np.save("dump_lut_pred.npy",y_pred_part[:,0])
+                # np.save("dump_lut_gt.npy", y_test[:,i])
+                # sys.exit(0)
+                # # np.save("dump_dsp.npy", y_pred_part)
+                
+                # print(X_test)
             else:
                 y_pred_part = model(torch.tensor(X_test)).detach().numpy()
 
@@ -75,7 +91,7 @@ def display_results_regressor(X_test, X_raw_test, y_test, output_features, folde
 
         # Consolidate feature predictions
         y_pred[:, i] = y_pred_part[:, 0]
-
+            
         i += 1
 
     # Calculate metrics
@@ -90,9 +106,10 @@ def test_regression_classification_union(X_test, X_raw_test, y_test, features_wi
 
     features_with_classification = features_without_classification + feature_classification_task
 
-    model_classifier = load_model(folder_name+"/classification")
+    model_classifier = load_model(folder_name+"/classification").to("cpu")
+    model_classifier.switch_device("cpu")
 
-    # predict the classes of the test dataset, then convert to binary 1/-1
+    # predict the classes of the test dataset, then convert to binary 1/0
     if is_graph:
         X_loader = gloader.DataLoader(X_test, batch_size=len(X_test))
         X = next(iter(X_loader))
@@ -119,14 +136,15 @@ def test_regression_classification_union(X_test, X_raw_test, y_test, features_wi
 
     i = 0
     for feature in features_without_classification:
-        model_regressor = load_model(folder_name+'/regression_'+feature+'/')
+        model_regressor = load_model(folder_name+'/regression_'+feature+'/').to("cpu")
+        model_regressor.switch_device("cpu")
 
         if is_graph:
             X_loader = gloader.DataLoader(X_test_only_success, batch_size=len(X_test_only_success))
             X = next(iter(X_loader))
             y_regression_pred_slice = model_regressor(X).detach().numpy()
         else:
-            y_regression_pred_slice = model_regressor(torch.tensor(X_test_only_success)).detach().numpy()
+            y_regression_pred_slice = model_regressor(torch.tensor(X_test_only_success)).detach().cpu().numpy()
         y_regression_pred[:, i] = y_regression_pred_slice[:, 0]
         i += 1
 

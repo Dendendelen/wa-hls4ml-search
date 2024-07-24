@@ -1,13 +1,12 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import math
-import os
+import os, sys
 
 
 def plot_results(name, mpl_plots, y_test, y_pred, X_raw_test, output_features, folder_name):
 
     colors = ['blue', 'green', 'red', 'cyan', 'magenta', 'yellow', 'orange']
-
 
     if mpl_plots:
         # Iterate over each column
@@ -64,10 +63,10 @@ def plot_results(name, mpl_plots, y_test, y_pred, X_raw_test, output_features, f
             # Create a mask for the current strategy
             X_raw_test = np.asarray(X_raw_test)
             mask = X_raw_test[:,
-                   strategy + 4] == 1  # assuming the 'strategy' is the 5th and 6th feature in your input data
+                   strategy + 5] == 1  # assuming the 'strategy' is the 6th and 7th feature in your input data TODO: change this back for the fewer features
             text_arr = [
-                f"{int(point[2])}-bit {int(point[0])}x{int(point[1])} @ RF={int(point[3])} ({strat_dict[strategy]})" for
-                point in X_raw_test if point[strategy + 4] == 1]
+                f"{int(point[3])}-bit {int(point[0])}x{int(point[1])}x{int(point[2])} @ RF={int(point[4])} ({strat_dict[strategy]})" for
+                point in X_raw_test if point[strategy + 5] == 1]
 
             # Create a scatter plot for each output feature and strategy
             scatter = go.Scatter(
